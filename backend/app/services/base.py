@@ -49,7 +49,8 @@ class BaseModuleService:
             if not str(values.get(field) or "").strip()
         ]
         if missing:
-            return None, missing
+            # 统一前缀，路由层据此与领域校验错误区分
+            return None, [f"缺少必填字段：{field}" for field in missing]
         rows = store.rows(self.MODULE)
         entry = {"id": max((int(row.get("id", 0)) for row in rows), default=0) + 1}
         entry.update({field: values.get(field) for field in self.LIST_FIELDS})

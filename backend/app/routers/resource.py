@@ -85,9 +85,17 @@ def get_entry(module: str, entry_id: int) -> dict[str, Any]:
 @router.post("/{module}", response_model=ActionResult)
 def create_entry(module: str, payload: EntryPayload) -> ActionResult:
     service = require_service(module)
-    entry, missing = service.create_entry(payload.values)
-    if missing:
-        return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
+    entry, errors = service.create_entry(payload.values)
+    if entry is None:
+        # 基类缺字段错误带统一前缀；其余为领域校验失败（如口径冲突、可加性违规）
+        if errors and all(e.startswith("缺少必填字段：") for e in errors):
+            return ActionResult(
+                ok=False,
+                message="缺少必填字段：" + "、".join(e.split("：", 1)[1] for e in errors),
+            )
+        return ActionResult(ok=False, message=f"登记校验未通过：{'；'.join(errors)}")
+    if errors:  # 登记成功但带提示（如内容未变化、复用快照）
+        return ActionResult(ok=True, message=f"{service.ENTITY}已登记（{errors[0]}）", entry=entry)
     return ActionResult(ok=True, message=f"{service.ENTITY}已登记", entry=entry)
 
 

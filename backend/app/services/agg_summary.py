@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.caliber import CaliberRegistry, _split_dims
 from app.store import store
 
 
@@ -20,7 +21,8 @@ class AggSummaryService(BaseModuleService):
     MODULE = "agg_summary"
     ENTITY = "汇总表"
     OPERATION_TERM = "聚合"
-    LIST_FIELDS = ["汇总名称", "源事实表", "汇总维度", "汇总度量", "汇总粒度", "刷新周期", "增量标记"]
+    LIST_FIELDS = ["汇总名称", "源事实表", "汇总维度", "汇总度量", "汇总粒度", "刷新周期",
+                   "增量标记", "口径校验结果", "口径拦截原因"]
     REQUIRED_FIELDS = ["汇总名称", "源事实表", "汇总维度"]
     STATUS_ORDER = ["草稿", "已构建", "已刷新", "构建失败"]
     ACTION_RULES = {"执行构建": "草稿", "刷新汇总": "已刷新"}
@@ -57,6 +59,16 @@ class AggSummaryService(BaseModuleService):
 
         # 检查汇总维度上卷合理性
         _validate_agg_dims(values)
+
+        # 度量口径快照校验：逐度量判定目标维度组合是否在可加范围内，
+        # 例如期末余额沿日期(DIM_TIME)求和会在此被拦截
+        verdict = _caliber_verdict(
+            fact_name,
+            _split_dims(values.get("汇总维度")),
+            _split_dims(values.get("汇总度量")),
+        )
+        values["口径校验结果"] = "通过" if verdict["all_allowed"] else "拦截"
+        values["口径拦截原因"] = "" if verdict["all_allowed"] else "；".join(verdict["reasons"])
 
         # 设置刷新周期默认值
         if not values.get("刷新周期"):
@@ -95,6 +107,27 @@ class AggSummaryService(BaseModuleService):
         fact_name = entry.get("源事实表", "")
 
         if action == "执行构建":
+            # 口径快照硬拦截：不允许的维度组合（如期末余额沿日期求和）禁止进入构建
+            verdict = _caliber_verdict(
+                fact_name,
+                _split_dims(entry.get("汇总维度")),
+                _split_dims(entry.get("汇总度量")),
+            )
+            if not verdict["all_allowed"]:
+                entry["status"] = "构建失败"
+                entry["pending"] = True
+                entry["abnormal"] = True
+                entry["口径校验结果"] = "拦截"
+                entry["口径拦截原因"] = "；".join(verdict["reasons"])
+                store.channel.publish("agg.blocked_by_caliber", {
+                    "agg_name": entry["汇总名称"],
+                    "source_fact": fact_name,
+                    "reasons": verdict["reasons"],
+                    "blocked_dim_combos": verdict["blocked_dim_combos"],
+                    "entry_id": entry_id,
+                })
+                return entry, "口径校验拦截，构建未执行：" + "；".join(verdict["reasons"])
+
             # 模拟汇总构建过程
             build_result = _simulate_agg_build(entry)
             if build_result["success"]:
@@ -204,3 +237,29 @@ def _simulate_agg_build(entry: dict[str, Any]) -> dict[str, Any]:
 def _simulate_agg_refresh(entry: dict[str, Any]) -> dict[str, Any]:
     """模拟汇总增量刷新过程。"""
     return {"success": True, "new_rows": 50, "refreshed_at": datetime.now(timezone.utc).isoformat()}
+
+
+def _caliber_verdict(fact_name: str, agg_dims: list[str],
+                     measures: list[str]) -> dict[str, Any]:
+    """汇总配置的口径试算：返回是否放行、拦截原因与不允许汇总的维度组合。"""
+    registry = CaliberRegistry(store)
+    reasons: list[str] = []
+    blocked_combos: list[list[str]] = []
+    checked = 0
+    for measure in measures:
+        trial = registry.trial(measure, fact_name, agg_dims)
+        if trial.get("resolved_snap_id") is None:
+            # 未登记口径不阻断历史配置，仅提示（新事实发布链路会先登记口径）
+            continue
+        checked += 1
+        if trial["blocked"]:
+            reasons.extend(trial["violations"])
+            blocked_combos.extend(trial["blocked_dim_combos"])
+    # 去重，保持输出稳定
+    unique_combos = sorted({tuple(c) for c in blocked_combos})
+    return {
+        "all_allowed": not reasons,
+        "checked_measures": checked,
+        "reasons": reasons,
+        "blocked_dim_combos": [list(c) for c in unique_combos],
+    }

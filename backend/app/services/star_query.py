@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.caliber import CaliberRegistry
 from app.store import store
 
 
@@ -74,6 +75,31 @@ class StarQueryService(BaseModuleService):
         return entry, []
 
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
+        if action == "验证查询":
+            # 口径解析前置：任一查询只能采用一个适用口径；被拦截的维度组合直接判失败，
+            # 不进入状态流转，避免未过校验的查询变为"已验证"
+            entry = self.get_entry(entry_id)
+            if entry is None:
+                return None, f"{self.ENTITY} {entry_id} 不存在或已归档"
+            fact_name = str(entry.get("事实表", "")).strip()
+            registry = CaliberRegistry(store)
+            measure_names = [m.strip() for m in str(entry.get("度量选择", "")).split(".") if m.strip()]
+            target_dims = [d.strip() for d in str(entry.get("分组维度", "")).split(".") if d.strip()]
+            resolution = None
+            if measure_names:
+                resolution = registry.resolve_for_query(measure_names, fact_name, target_dims)
+                if not resolution["all_allowed"]:
+                    reasons = [
+                        v for t in resolution["trials"] for v in t.get("violations", [])
+                    ]
+                    store.channel.publish("query.blocked_by_caliber", {
+                        "query_name": entry["查询名称"],
+                        "reasons": reasons,
+                        "blocked_dim_combos": [list(c) for c in resolution["blocked_dim_combos"]],
+                        "entry_id": entry_id,
+                    })
+                    return None, "口径校验未通过，查询不可发布：" + "；".join(reasons)
+
         entry, message = super().run_action(entry_id, action)
         if entry is None:
             return None, message
@@ -84,6 +110,10 @@ class StarQueryService(BaseModuleService):
                 store.channel.publish("query.validated", {
                     "query_name": entry["查询名称"],
                     "generated_sql": sql,
+                    "resolved_calibers": [
+                        {"measure": t["measure_name"], "snap_id": t.get("resolved_snap_id")}
+                        for t in (resolution["trials"] if resolution else [])
+                    ],
                     "entry_id": entry_id,
                 })
             except Exception:

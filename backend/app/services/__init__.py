@@ -6,6 +6,7 @@ from app.services.dim_definition import DimDefinitionService
 from app.services.dim_attr import DimAttrService
 from app.services.fact_design import FactDesignService
 from app.services.measure_config import MeasureConfigService
+from app.services.measure_caliber_snapshot import MeasureCaliberSnapshotService
 from app.services.scd_handler import ScdHandlerService
 from app.services.surrogate_key import SurrogateKeyService
 from app.services.hierarchy_build import HierarchyBuildService
@@ -28,6 +29,7 @@ SERVICES: dict[str, BaseModuleService] = {
     "dim_attr": DimAttrService(),
     "fact_design": FactDesignService(),
     "measure_config": MeasureConfigService(),
+    "measure_caliber_snapshot": MeasureCaliberSnapshotService(),
     "scd_handler": ScdHandlerService(),
     "surrogate_key": SurrogateKeyService(),
     "hierarchy_build": HierarchyBuildService(),

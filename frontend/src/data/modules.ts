@@ -47,6 +47,17 @@ export const MODULES: ModuleMeta[] = [
     metrics: ["度量总数", "已确认数", "停用数"],
   },
   {
+    key: "measure_caliber_snapshot",
+    name: "度量口径快照",
+    entity: "口径快照",
+    desc: "登记度量口径的版本快照，按事实粒度与可加维度校验可加范围，拦截期末余额沿日期求和等错误汇总，历史口径支持报表引用回查",
+    fields: ["度量名称", "所属事实", "事实粒度", "聚合方式", "可加性类别", "可加维度", "禁止汇总维度", "替代聚合", "口径来源"],
+    statuses: ["生效中", "已停用"],
+    actions: ["停用口径", "重新生效"],
+    actionTargets: {"停用口径": "已停用", "重新生效": "生效中"},
+    metrics: ["快照总数", "生效中数", "已停用数"],
+  },
+  {
     key: "scd_handler",
     name: "SCD处理",
     entity: "SCD策略",

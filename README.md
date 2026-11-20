@@ -54,6 +54,7 @@ npm run dev
 | 维度属性 | `dim_attr` | 属性字段 | 属性名称、所属维度、数据类型 |
 | 事实设计 | `fact_design` | 事实表 | 事实名称、业务过程、粒度声明 |
 | 度量配置 | `measure_config` | 度量字段 | 度量名称、所属事实、度量类型 |
+| 度量口径快照 | `measure_caliber_snapshot` | 口径快照 | 度量名称、事实粒度、可加性类别、可加维度、禁止汇总维度 |
 | SCD处理 | `scd_handler` | SCD策略 | 策略名称、目标维度、SCD类型 |
 | 代理键 | `surrogate_key` | 键值定义 | 键值名称、目标维度、生成策略 |
 | 层级构建 | `hierarchy_build` | 层级关系 | 层级名称、所属维度、父子字段 |
@@ -78,6 +79,21 @@ npm run dev
   `frontend/src/domain/<模块>.ts`，用于承载真实业务差异并维持36题位容量。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+
+## 度量口径快照
+
+度量建议会沉淀为带版本的**口径快照**（`app/services/caliber.py` +
+`measure_caliber_snapshot` 模块），解决"建议可给但无法汇总复算"的问题：
+
+- 每条快照登记事实粒度、聚合方式、可加性类别（全可加/半可加/不可加）、
+  可加维度白名单与禁止汇总维度，并带 `content_hash` 内容指纹。
+- 同一度量在同一事实粒度范围内只允许一个"生效中"口径；修订显式升版，
+  旧版本转"已停用"但永久保留，报表按 `snap_id` 绑定，同名字段不会被悄然替换。
+- 期末余额类半可加度量沿日期（`DIM_TIME`）求和会被 `agg_summary` 构建和
+  `star_query` 验证硬拦截，替代聚合为 `LAST_VALUE`；流水类交易额全可加正常放行。
+- 专用接口（`/api/measure_caliber_snapshot/...`）：批量登记建议、试算 `trial`、
+  查询级口径解析 `resolve-query`、可加维度修订 `revise`、报表绑定与历史回查。
+- 端到端演示与可复算脚本：`python3 backend/scripts/demo_caliber.py`。
 
 领域：数据工程
 子方向：数仓与数据湖

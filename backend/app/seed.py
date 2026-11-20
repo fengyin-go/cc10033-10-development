@@ -131,6 +131,9 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
          '度量名称': 'conversion_rate', '所属事实': '营销活动事实', '度量类型': 'DECIMAL(5,4)',
          '聚合方式': 'AVG', '精度要求': '四位小数', '是否可加': '否', '来源字段': 'conversion_cnt/click_cnt'},
     ],
+    # 度量口径版本快照与报表口径引用：初始为空，由口径登记动作写入，历史版本只增不改
+    "measure_caliber_snapshot": [],
+    "caliber_report_ref": [],
     "agg_summary": [
         {'id': 1, 'status': '已刷新', 'pending': False, 'abnormal': False,
          '汇总名称': '每日销售汇总', '源事实表': '销售明细事实',
